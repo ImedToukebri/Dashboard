@@ -9,12 +9,47 @@ const controllerMap = Array.from({ length: 10 }, (_, i) => ({
     controller: i + 1
 }));
 
+// Room names by controller-door key (e.g., "200-1")
+const roomNames = {
+    '200-1': 'Main Entrance',
+    '200-2': 'Main Exit',
+    '201-1': 'Main Hall Entrance',
+    '201-2': 'Main Hall Exit',
+    '201-3': 'Tech Room',
+    '201-4': 'Hall Entrance',
+    '202-1': 'Game On',
+    '202-2': 'Console Room Entry',
+    '202-3': 'Console Room Entry',
+    '202-4': 'Axe Throwing Entry',
+    '204-1': 'Computer Game Control',
+    '204-2': 'Arcade Room',
+    '204-3': 'Escape Room 1 Exit',
+    '204-4': 'Escape Room 2 Exit',
+    '205-1': 'Escape Room 3 Entrance',
+    '205-2': 'Escape Room 3 Exit',
+    '205-3': 'Axe Throwing Entrance',
+    '205-4': 'Axe Throwing Exit',
+    '206-1': "Manager's Office",
+    '206-2': 'Escape Room 1 Entrance',
+    '206-3': 'Floor is Lava Entry',
+    '206-4': 'Digital Games Entrance',
+    '207-1': 'Back Door Entrance',
+    '207-2': 'Game Hall Entrance',
+    '207-3': 'Escape Room 2 Entrance',
+    '207-4': 'Meeting Room',
+    '208-1': 'Escape Room 5 Entrance',
+    '208-2': 'Escape Room 4 Entrance',
+    '209-2': 'Storage Room',
+    '209-3': 'Kitchen'
+};
+
 const CsvReader = () => {
     const [users, setUsers] = useState([]);
     const [transactions, setTransactions] = useState([]);
     const [expandedPin, setExpandedPin] = useState(null);
     const [search, setSearch] = useState('');
     const [selectedDates, setSelectedDates] = useState({});
+    const [isSyncing, setIsSyncing] = useState(false);
 
     useEffect(() => {
         fetch('/users.csv')
@@ -27,7 +62,11 @@ const CsvReader = () => {
                 });
             });
 
-        Promise.all(
+        fetchTransactions();
+    }, []);
+
+    const fetchTransactions = async () => {
+        const allData = await Promise.all(
             controllerMap.map(({ file, controller }) =>
                 fetch(file)
                     .then((res) => res.text())
@@ -38,11 +77,29 @@ const CsvReader = () => {
                         }).data.map(t => ({ ...t, controllerNumber: controller }))
                     )
             )
-        ).then((allData) => {
-            const merged = [].concat(...allData);
-            setTransactions(merged);
-        });
-    }, []);
+        );
+        const merged = [].concat(...allData);
+        setTransactions(merged);
+    };
+
+    const handleSync = async () => {
+        if (isSyncing) return;
+        setIsSyncing(true);
+
+        try {
+            const res = await fetch('http://localhost:4000/sync-transactions');
+            const data = await res.json();
+
+            if (res.ok && data.success) {
+                alert('✅ Transactions synced successfully. Reloading data...');
+                await fetchTransactions();
+            } else {
+                alert(`❌ Sync failed: ${data.message || 'Unknown error'}`);
+            }
+        } finally {
+            setIsSyncing(false);
+        }
+    };
 
     const toggleExpand = (pin) => {
         setExpandedPin(prev => (prev === pin ? null : pin));
@@ -81,27 +138,17 @@ const CsvReader = () => {
         setSelectedDates(prev => ({ ...prev, [pin]: date }));
     };
 
-    const handleSync = async () => {
-        try {
-            const res = await fetch('http://localhost:4000/sync-transactions');
-
-            const text = await res.text(); // <- parse as plain text
-            if (res.ok) {
-                alert("✅ " + text);
-            } else {
-                alert("❌ Sync failed: " + text);
-            }
-        } catch (err) {
-            alert('❌ Failed to sync transactions.');
-            console.error(err);
-        }
-    };
-
-
     const getFirstCheckInToday = (userTransactions) => {
         const today = new Date();
         const todayStr = `${String(today.getDate()).padStart(2, '0')}-${String(today.getMonth() + 1).padStart(2, '0')}-${today.getFullYear()}`;
-        const todaysTx = userTransactions.filter(t => convertTime(t.Time_second).date === todayStr);
+        const SIX_AM = 6 * 60 * 60;
+
+        const todaysTx = userTransactions.filter(t => {
+            const tx = convertTime(t.Time_second);
+            const timeInSeconds = parseInt(t.Time_second, 10) % 86400;
+            return tx.date === todayStr && timeInSeconds >= SIX_AM;
+        });
+
         if (!todaysTx.length) return null;
         return todaysTx.sort((a, b) => a.Time_second - b.Time_second)[0];
     };
@@ -112,30 +159,25 @@ const CsvReader = () => {
             <div className="text-center mb-4" style={{ color: '#7b8ca7', fontWeight: 500, fontSize: 18 }}>
                 Follow attendance
             </div>
+
             <div className="text-center mb-4">
                 <button
                     onClick={handleSync}
                     className="btn btn-outline-primary shadow-sm"
+                    disabled={isSyncing}
                     style={{
                         borderRadius: '1rem',
                         fontWeight: '600',
                         padding: '0.5rem 1.5rem',
                         fontSize: '1rem',
                         border: '1.5px solid #4f8cff',
-                        color: '#4f8cff',
-                        backgroundColor: 'white',
-                        transition: '0.3s ease'
-                    }}
-                    onMouseOver={(e) => {
-                        e.target.style.backgroundColor = '#4f8cff';
-                        e.target.style.color = 'white';
-                    }}
-                    onMouseOut={(e) => {
-                        e.target.style.backgroundColor = 'white';
-                        e.target.style.color = '#4f8cff';
+                        color: isSyncing ? '#ccc' : '#4f8cff',
+                        backgroundColor: isSyncing ? '#f4f6fb' : 'white',
+                        transition: '0.3s ease',
+                        cursor: isSyncing ? 'not-allowed' : 'pointer'
                     }}
                 >
-                    🔄 Sync Transactions
+                    {isSyncing ? '🔄 Syncing...' : '🔄 Sync Transactions'}
                 </button>
             </div>
 
@@ -145,8 +187,16 @@ const CsvReader = () => {
                 placeholder="Search by name..."
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
-                style={{ maxWidth: 400, margin: '0 auto', display: 'block', background: '#f7fafd', color: '#222', border: '1.5px solid #4f8cff' }}
+                style={{
+                    maxWidth: 400,
+                    margin: '0 auto',
+                    display: 'block',
+                    background: '#f7fafd',
+                    color: '#222',
+                    border: '1.5px solid #4f8cff'
+                }}
             />
+
             <div className="table-responsive">
                 <table className="table table-hover table-bordered align-middle mb-0">
                     <thead className="table-dark">
@@ -154,7 +204,6 @@ const CsvReader = () => {
                             <th style={{ width: 60 }}></th>
                             <th style={{ width: 220 }}>Name</th>
                             <th style={{ width: 180 }}>Card Number</th>
-
                         </tr>
                     </thead>
                     <tbody>
@@ -182,7 +231,9 @@ const CsvReader = () => {
                                     >
                                         <td>
                                             <div style={{
-                                                width: 40, height: 40, borderRadius: '50%', background: '#e3e8f0', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, fontSize: 18, color: '#4f8cff', margin: '0 auto'
+                                                width: 40, height: 40, borderRadius: '50%', background: '#e3e8f0',
+                                                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                                fontWeight: 700, fontSize: 18, color: '#4f8cff', margin: '0 auto'
                                             }}>{getInitials(user.Name)}</div>
                                         </td>
                                         <td className="fw-semibold" style={{ fontSize: 17 }}>
@@ -194,7 +245,6 @@ const CsvReader = () => {
                                             )}
                                         </td>
                                         <td style={{ fontWeight: 500 }}>{user.CardNo}</td>
-
                                     </tr>
                                     {isExpanded && (
                                         <tr>
@@ -222,28 +272,36 @@ const CsvReader = () => {
                                                             <thead>
                                                                 <tr>
                                                                     <th>Status</th>
-                                                                    <th>Door & Controller</th>
+                                                                    <th>Room</th>
                                                                     <th>Timestamp</th>
                                                                 </tr>
                                                             </thead>
                                                             <tbody>
                                                                 {grouped[selectedDate]
                                                                     .sort((a, b) => b.Time_second - a.Time_second)
-                                                                    .map((t, i) => (
-                                                                        <tr key={i}>
-                                                                            <td style={{ fontWeight: 700, color: ['4', '0', '6'].includes(t.Verified) ? '#4f8cff' : t.Verified === 'x' ? '#7b8ca7' : '#222' }}>
-                                                                                {['4', '0', '6'].includes(t.Verified)
-                                                                                    ? <span title="Success" style={{ fontSize: 18 }}>✔️ Success</span>
-                                                                                    : t.Verified === 'x'
-                                                                                        ? <span title="Denied" style={{ fontSize: 18 }}>⨉ Denied</span>
-                                                                                        : t.Verified}
-                                                                            </td>
-                                                                            <td>
-                                                                                Door {t.DoorID} <span style={{ color: '#7b8ca7', fontWeight: 500 }}>(Controller {t.controllerNumber})</span>
-                                                                            </td>
-                                                                            <td>{convertTime(t.Time_second).full}</td>
-                                                                        </tr>
-                                                                    ))}
+                                                                    .map((t, i) => {
+                                                                        const controllerId = 200 + t.controllerNumber - 1;
+                                                                        const key = `${controllerId}-${t.DoorID}`;
+                                                                        const room = roomNames[key] || `Door ${t.DoorID} (Controller ${t.controllerNumber})`;
+
+                                                                        return (
+                                                                            <tr key={i}>
+                                                                                <td style={{
+                                                                                    fontWeight: 700,
+                                                                                    color: ['4', '0', '6'].includes(t.Verified) ? '#4f8cff' :
+                                                                                        t.Verified === 'x' ? '#7b8ca7' : '#222'
+                                                                                }}>
+                                                                                    {['4', '0', '6'].includes(t.Verified)
+                                                                                        ? <span title="Success" style={{ fontSize: 18 }}>✔️ Success</span>
+                                                                                        : t.Verified === 'x'
+                                                                                            ? <span title="Denied" style={{ fontSize: 18 }}>⨉ Denied</span>
+                                                                                            : t.Verified}
+                                                                                </td>
+                                                                                <td>{room}</td>
+                                                                                <td>{convertTime(t.Time_second).full}</td>
+                                                                            </tr>
+                                                                        );
+                                                                    })}
                                                             </tbody>
                                                         </table>
                                                     </div>
