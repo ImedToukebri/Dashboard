@@ -84,8 +84,13 @@ const CsvReader = () => {
     const handleSync = async () => {
         try {
             const res = await fetch('http://localhost:4000/sync-transactions');
-            const message = await res.text();
-            alert(message);
+
+            const text = await res.text(); // <- parse as plain text
+            if (res.ok) {
+                alert("✅ " + text);
+            } else {
+                alert("❌ Sync failed: " + text);
+            }
         } catch (err) {
             alert('❌ Failed to sync transactions.');
             console.error(err);
