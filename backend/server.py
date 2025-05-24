@@ -5,7 +5,7 @@ import subprocess
 app = Flask(__name__)
 CORS(app)
 
-ZTKeco_DIR = r"C:\Users\TheGameProduction\Desktop\all\ZTKeco\ZTKeco"
+ZTKeco_DIR = r"C:\ZK\all\ZTKeco\ZTKeco"
 
 @app.route('/sync-transactions', methods=['GET'])
 def sync_transactions():
